@@ -4,12 +4,15 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc -b",
-    "start": "node ./dist/index.js",
-    "dev": "npm run build && npm run start"
+    "start": "node dist/index.js",
+    "dev": "npm run build && npm run start",
+    
   },
   "keywords": [],
   "dependencies": {
-    "@repo/typescript-config": "workspace:*"
+    "@repo/typescript-config": "workspace:*",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.20.0"
   },
   "author": "",
   "license": "ISC",
