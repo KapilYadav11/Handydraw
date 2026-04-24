@@ -18,7 +18,7 @@ wss.on('connection', function connction(ws, request){
         ws.close();
         return;
     }
-
+ 
     ws.on('message', function message(data){
         ws.send('pong');
     })
