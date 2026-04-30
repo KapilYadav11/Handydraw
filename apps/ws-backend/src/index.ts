@@ -23,3 +23,6 @@ wss.on('connection', function connction(ws, request){
         ws.send('pong');
     })
 })
+wss.on('listening', () => {
+    console.log('WebSocket server running on port 8080');
+});

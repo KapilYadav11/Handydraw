@@ -1,7 +1,10 @@
 {
-    "extends": "@repo/typescript-config/base.json",
-    "compilerOptions": {
-    "types": ["node"] // <--- Add this line explicitly if it's missing
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "outDir": "./dist",
+    "rootDir": "./src"
   },
-  "include": ["src", "prisma.config.ts"] // <--- Make sure your config file is included
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
