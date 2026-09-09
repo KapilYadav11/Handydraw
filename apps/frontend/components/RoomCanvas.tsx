@@ -12,6 +12,7 @@ export function RoomCanvas({ roomId }: { roomId: string }) {
     "connecting"
   );
   const socketRef = useRef<WebSocket | null>(null);
+  const openedRef = useRef(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -23,8 +24,17 @@ export function RoomCanvas({ roomId }: { roomId: string }) {
 
     const ws = new WebSocket(`${WS_URL}?token=${token}`);
     socketRef.current = ws;
+    openedRef.current = false;
+
+    const connectTimeout = setTimeout(() => {
+      if (!openedRef.current) {
+        setStatus("error");
+      }
+    }, 6000);
 
     ws.onopen = () => {
+      openedRef.current = true;
+      clearTimeout(connectTimeout);
       setSocket(ws);
       ws.send(
         JSON.stringify({
@@ -40,9 +50,13 @@ export function RoomCanvas({ roomId }: { roomId: string }) {
 
     ws.onclose = () => {
       setSocket(null);
+      if (!openedRef.current) {
+        setStatus("error");
+      }
     };
 
     return () => {
+      clearTimeout(connectTimeout);
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "leave_room", roomId }));
         ws.close();
@@ -58,10 +72,18 @@ export function RoomCanvas({ roomId }: { roomId: string }) {
 
   if (!socket) {
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-black text-white">
-        {status === "error"
-          ? "Could not connect to the server. Is ws-backend running?"
-          : "Connecting to server..."}
+      <div className="flex w-screen h-screen flex-col items-center justify-center gap-3 bg-black text-white">
+        <p>
+          {status === "error"
+            ? "Could not connect to the room."
+            : "Connecting to server..."}
+        </p>
+        {status === "error" && (
+          <p className="max-w-sm text-center text-sm text-white/50">
+            This can happen if you signed in before a server restart. Try
+            signing out and signing in again.
+          </p>
+        )}
       </div>
     );
   }
