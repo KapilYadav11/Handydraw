@@ -2,10 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "./IconButton";
-import { Circle, MousePointer2, Pencil, RectangleHorizontalIcon, Minus, Plus } from "lucide-react";
-import { Game } from "@/draw/Game";
+import {
+  Circle,
+  MousePointer2,
+  Pencil,
+  RectangleHorizontalIcon,
+  Minus,
+  Plus,
+  MoveUpRight,
+  Type,
+  StickyNote,
+} from "lucide-react";
+import { Game, EditRequest } from "@/draw/Game";
 
-export type Tool = "circle" | "rect" | "pencil" | "select";
+export type Tool = "circle" | "rect" | "pencil" | "select" | "arrow" | "text" | "sticky";
+
+type EditingState = EditRequest & {
+  screenX: number;
+  screenY: number;
+};
 
 export function Canvas({
   roomId,
@@ -15,10 +30,12 @@ export function Canvas({
   roomId: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const gameRef = useRef<Game>();
   const [game, setGame] = useState<Game>();
   const [selectedTool, setSelectedTool] = useState<Tool>("select");
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(100);
+  const [editing, setEditing] = useState<EditingState | null>(null);
 
   useEffect(() => {
     setDimensions({ width: window.innerWidth, height: window.innerHeight });
@@ -35,7 +52,16 @@ export function Canvas({
   useEffect(() => {
     if (canvasRef.current) {
       const g = new Game(canvasRef.current, roomId, socket);
+      gameRef.current = g;
+
       g.onViewportChange = (scale) => setZoom(scale);
+      g.onEditRequest = (req) => {
+        const t = g.getTransform();
+        const screenX = req.x * t.scale + t.offsetX;
+        const screenY = req.y * t.scale + t.offsetY - (req.type === "text" ? 22 : 0);
+        setEditing({ ...req, screenX, screenY });
+      };
+
       setGame(g);
 
       return () => {
@@ -44,14 +70,72 @@ export function Canvas({
     }
   }, [canvasRef, roomId, socket]);
 
+  function commitEditing() {
+    if (!editing || !gameRef.current) return;
+    gameRef.current.commitEdit(
+      editing.id,
+      editing.type,
+      editing.x,
+      editing.y,
+      editing.width,
+      editing.height,
+      editing.content,
+      editing.color
+    );
+    setEditing(null);
+    setSelectedTool("select");
+  }
+
+  function cancelEditing() {
+    setEditing(null);
+    setSelectedTool("select");
+  }
+
   return (
-    <div style={{ height: "100vh", overflow: "hidden" }}>
+    <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
       <canvas
         ref={canvasRef}
         width={dimensions.width}
         height={dimensions.height}
         style={{ cursor: selectedTool === "select" ? "default" : "crosshair" }}
       ></canvas>
+
+      {editing && (
+        <div style={{ position: "fixed", left: editing.screenX, top: editing.screenY, zIndex: 50 }}>
+          {editing.type === "text" ? (
+            <input
+              autoFocus
+              value={editing.content}
+              onChange={(e) => setEditing({ ...editing, content: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitEditing();
+                if (e.key === "Escape") cancelEditing();
+              }}
+              onBlur={commitEditing}
+              placeholder="Type something..."
+              className="min-w-[180px] border-b border-white/50 bg-transparent text-lg text-white outline-none placeholder:text-white/30"
+            />
+          ) : (
+            <textarea
+              autoFocus
+              value={editing.content}
+              onChange={(e) => setEditing({ ...editing, content: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") cancelEditing();
+              }}
+              onBlur={commitEditing}
+              placeholder="Note..."
+              style={{
+                width: editing.width,
+                height: editing.height,
+                backgroundColor: editing.color,
+              }}
+              className="resize-none rounded-lg p-2.5 text-sm text-[#1E2530] shadow-lg outline-none placeholder:text-[#1E2530]/40"
+            />
+          )}
+        </div>
+      )}
+
       <Topbar selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
       <ZoomControls
         zoom={zoom}
@@ -92,6 +176,21 @@ function Topbar({
           onClick={() => setSelectedTool("circle")}
           activated={selectedTool === "circle"}
           icon={<Circle />}
+        />
+        <IconButton
+          onClick={() => setSelectedTool("arrow")}
+          activated={selectedTool === "arrow"}
+          icon={<MoveUpRight />}
+        />
+        <IconButton
+          onClick={() => setSelectedTool("text")}
+          activated={selectedTool === "text"}
+          icon={<Type />}
+        />
+        <IconButton
+          onClick={() => setSelectedTool("sticky")}
+          activated={selectedTool === "sticky"}
+          icon={<StickyNote />}
         />
       </div>
     </div>

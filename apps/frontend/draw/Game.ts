@@ -21,6 +21,31 @@ export type Shape =
       id: string;
       type: "pencil";
       points: { x: number; y: number }[];
+    }
+  | {
+      id: string;
+      type: "arrow";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+    }
+  | {
+      id: string;
+      type: "text";
+      x: number;
+      y: number;
+      content: string;
+    }
+  | {
+      id: string;
+      type: "sticky";
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      content: string;
+      color: string;
     };
 
 type Envelope =
@@ -31,49 +56,35 @@ type Envelope =
 
 type BBox = { x: number; y: number; width: number; height: number };
 type HandleName = "tl" | "tr" | "bl" | "br";
+type AnyHandle = HandleName | "start" | "end";
+
 const HANDLE_SIZE = 9;
 const MIN_SCALE = 0.2;
 const MAX_SCALE = 4;
+const TEXT_FONT_SIZE = 20;
+const STICKY_PALETTE = ["#FFE066", "#FF9F80", "#8ED1FC", "#B6F3B0", "#D6BBFC"];
 
 type HistoryEntry =
   | { type: "add"; id: string }
   | { type: "delete"; shape: Shape }
   | { type: "update"; id: string; before: Shape; after: Shape };
 
+export type EditRequest = {
+  id: string | null;
+  type: "text" | "sticky";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  content: string;
+  color?: string;
+};
+
 function genId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function getBBox(shape: Shape): BBox {
-  if (shape.type === "rect") {
-    return {
-      x: Math.min(shape.x, shape.x + shape.width),
-      y: Math.min(shape.y, shape.y + shape.height),
-      width: Math.abs(shape.width),
-      height: Math.abs(shape.height),
-    };
-  }
-  if (shape.type === "circle") {
-    return {
-      x: shape.centerX - shape.radius,
-      y: shape.centerY - shape.radius,
-      width: shape.radius * 2,
-      height: shape.radius * 2,
-    };
-  }
-  const xs = shape.points.map((p) => p.x);
-  const ys = shape.points.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  return {
-    x: minX,
-    y: minY,
-    width: Math.max(...xs) - minX,
-    height: Math.max(...ys) - minY,
-  };
 }
 
 function pointInBBox(x: number, y: number, box: BBox, padding = 4) {
@@ -94,6 +105,19 @@ function getHandlePositions(box: BBox): Record<HandleName, { x: number; y: numbe
   };
 }
 
+function distToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
+  const A = px - x1;
+  const B = py - y1;
+  const C = x2 - x1;
+  const D = y2 - y1;
+  const lenSq = C * C + D * D;
+  let t = lenSq !== 0 ? (A * C + B * D) / lenSq : -1;
+  t = Math.max(0, Math.min(1, t));
+  const xx = x1 + t * C;
+  const yy = y1 + t * D;
+  return Math.hypot(px - xx, py - yy);
+}
+
 export class Game {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -107,7 +131,7 @@ export class Game {
 
   private selectedId: string | null = null;
   private dragMode: "none" | "move" | "resize" | "pan" = "none";
-  private activeHandle: HandleName | null = null;
+  private activeHandle: AnyHandle | null = null;
   private dragStart = { x: 0, y: 0 };
   private shapeSnapshot: Shape | null = null;
 
@@ -122,6 +146,7 @@ export class Game {
   private redoStack: HistoryEntry[] = [];
 
   onViewportChange?: (scale: number) => void;
+  onEditRequest?: (req: EditRequest) => void;
 
   socket: WebSocket;
 
@@ -144,6 +169,7 @@ export class Game {
     this.canvas.removeEventListener("mousedown", this.mouseDownHandler);
     this.canvas.removeEventListener("mouseup", this.mouseUpHandler);
     this.canvas.removeEventListener("mousemove", this.mouseMoveHandler);
+    this.canvas.removeEventListener("dblclick", this.dblClickHandler);
     this.canvas.removeEventListener("wheel", this.wheelHandler);
     window.removeEventListener("keydown", this.keyDownHandler);
     window.removeEventListener("keyup", this.keyUpHandler);
@@ -159,6 +185,10 @@ export class Game {
 
   getZoomPercent(): number {
     return Math.round(this.scale * 100);
+  }
+
+  getTransform() {
+    return { scale: this.scale, offsetX: this.offsetX, offsetY: this.offsetY };
   }
 
   zoomBy(factor: number, centerX?: number, centerY?: number) {
@@ -254,8 +284,26 @@ export class Game {
     }
   }
 
+  private wrapText(text: string, maxWidth: number): string[] {
+    const words = text.split(/\s+/).filter(Boolean);
+    const lines: string[] = [];
+    let current = "";
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+      if (this.ctx.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    }
+    if (current) lines.push(current);
+    return lines;
+  }
+
   private drawShape(shape: Shape) {
     this.ctx.strokeStyle = "rgba(255, 255, 255)";
+    this.ctx.fillStyle = "rgba(255, 255, 255)";
 
     if (shape.type === "rect") {
       this.ctx.strokeRect(shape.x, shape.y, shape.width, shape.height);
@@ -273,11 +321,92 @@ export class Game {
       }
       this.ctx.stroke();
       this.ctx.closePath();
+    } else if (shape.type === "arrow") {
+      this.ctx.beginPath();
+      this.ctx.moveTo(shape.x1, shape.y1);
+      this.ctx.lineTo(shape.x2, shape.y2);
+      this.ctx.stroke();
+
+      const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1);
+      const headLen = 12 / this.scale;
+      this.ctx.beginPath();
+      this.ctx.moveTo(shape.x2, shape.y2);
+      this.ctx.lineTo(
+        shape.x2 - headLen * Math.cos(angle - Math.PI / 6),
+        shape.y2 - headLen * Math.sin(angle - Math.PI / 6)
+      );
+      this.ctx.moveTo(shape.x2, shape.y2);
+      this.ctx.lineTo(
+        shape.x2 - headLen * Math.cos(angle + Math.PI / 6),
+        shape.y2 - headLen * Math.sin(angle + Math.PI / 6)
+      );
+      this.ctx.stroke();
+    } else if (shape.type === "text") {
+      this.ctx.font = `${TEXT_FONT_SIZE}px 'Plus Jakarta Sans', sans-serif`;
+      this.ctx.fillText(shape.content, shape.x, shape.y);
+    } else if (shape.type === "sticky") {
+      this.ctx.save();
+      this.ctx.fillStyle = shape.color;
+      const r = 8;
+      this.ctx.beginPath();
+      // @ts-ignore - roundRect is supported in modern browsers
+      this.ctx.roundRect(shape.x, shape.y, Math.abs(shape.width), Math.abs(shape.height), r);
+      this.ctx.fill();
+
+      this.ctx.fillStyle = "#1E2530";
+      this.ctx.font = `14px 'Plus Jakarta Sans', sans-serif`;
+      const lines = this.wrapText(shape.content, Math.abs(shape.width) - 20);
+      lines.forEach((line, i) => {
+        this.ctx.fillText(line, shape.x + 10, shape.y + 24 + i * 18);
+      });
+      this.ctx.restore();
     }
   }
 
+  private getBBox(shape: Shape): BBox {
+    if (shape.type === "rect" || shape.type === "sticky") {
+      return {
+        x: Math.min(shape.x, shape.x + shape.width),
+        y: Math.min(shape.y, shape.y + shape.height),
+        width: Math.abs(shape.width),
+        height: Math.abs(shape.height),
+      };
+    }
+    if (shape.type === "circle") {
+      return {
+        x: shape.centerX - shape.radius,
+        y: shape.centerY - shape.radius,
+        width: shape.radius * 2,
+        height: shape.radius * 2,
+      };
+    }
+    if (shape.type === "arrow") {
+      return {
+        x: Math.min(shape.x1, shape.x2),
+        y: Math.min(shape.y1, shape.y2),
+        width: Math.abs(shape.x2 - shape.x1),
+        height: Math.abs(shape.y2 - shape.y1),
+      };
+    }
+    if (shape.type === "text") {
+      this.ctx.font = `${TEXT_FONT_SIZE}px 'Plus Jakarta Sans', sans-serif`;
+      const width = Math.max(this.ctx.measureText(shape.content || " ").width, 10);
+      return { x: shape.x, y: shape.y - TEXT_FONT_SIZE, width, height: TEXT_FONT_SIZE + 6 };
+    }
+    const xs = shape.points.map((p) => p.x);
+    const ys = shape.points.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    return {
+      x: minX,
+      y: minY,
+      width: Math.max(...xs) - minX,
+      height: Math.max(...ys) - minY,
+    };
+  }
+
   private drawSelection(shape: Shape) {
-    const box = getBBox(shape);
+    const box = this.getBBox(shape);
     const pad = 6 / this.scale;
     this.ctx.save();
     this.ctx.strokeStyle = "#3B5BFF";
@@ -286,10 +415,14 @@ export class Game {
     this.ctx.strokeRect(box.x - pad, box.y - pad, box.width + pad * 2, box.height + pad * 2);
     this.ctx.setLineDash([]);
 
-    if (shape.type !== "pencil") {
+    const hs = HANDLE_SIZE / this.scale;
+    this.ctx.fillStyle = "#3B5BFF";
+
+    if (shape.type === "arrow") {
+      this.ctx.fillRect(shape.x1 - hs / 2, shape.y1 - hs / 2, hs, hs);
+      this.ctx.fillRect(shape.x2 - hs / 2, shape.y2 - hs / 2, hs, hs);
+    } else if (shape.type !== "pencil" && shape.type !== "text") {
       const handles = getHandlePositions(box);
-      const hs = HANDLE_SIZE / this.scale;
-      this.ctx.fillStyle = "#3B5BFF";
       Object.values(handles).forEach((h) => {
         this.ctx.fillRect(h.x - hs / 2, h.y - hs / 2, hs, hs);
       });
@@ -301,22 +434,32 @@ export class Game {
     for (let i = this.existingShapes.length - 1; i >= 0; i--) {
       const shape = this.existingShapes[i]!;
       if (shape.type === "pencil") {
-        const box = getBBox(shape);
+        const box = this.getBBox(shape);
         if (pointInBBox(x, y, box, 8 / this.scale)) return shape;
       } else if (shape.type === "circle") {
         const dist = Math.hypot(x - shape.centerX, y - shape.centerY);
         if (dist <= Math.abs(shape.radius) + 4 / this.scale) return shape;
+      } else if (shape.type === "arrow") {
+        if (distToSegment(x, y, shape.x1, shape.y1, shape.x2, shape.y2) <= 6 / this.scale) return shape;
       } else {
-        if (pointInBBox(x, y, getBBox(shape))) return shape;
+        if (pointInBBox(x, y, this.getBBox(shape))) return shape;
       }
     }
     return null;
   }
 
-  private hitTestHandle(x: number, y: number, shape: Shape): HandleName | null {
-    if (shape.type === "pencil") return null;
-    const handles = getHandlePositions(getBBox(shape));
+  private hitTestHandle(x: number, y: number, shape: Shape): AnyHandle | null {
+    if (shape.type === "pencil" || shape.type === "text") return null;
+
     const tolerance = HANDLE_SIZE / this.scale;
+
+    if (shape.type === "arrow") {
+      if (Math.hypot(x - shape.x1, y - shape.y1) <= tolerance) return "start";
+      if (Math.hypot(x - shape.x2, y - shape.y2) <= tolerance) return "end";
+      return null;
+    }
+
+    const handles = getHandlePositions(this.getBBox(shape));
     for (const [name, pos] of Object.entries(handles) as [HandleName, { x: number; y: number }][]) {
       if (Math.abs(x - pos.x) <= tolerance && Math.abs(y - pos.y) <= tolerance) {
         return name;
@@ -344,6 +487,62 @@ export class Game {
     this.existingShapes.push(shape);
     this.broadcast({ op: "add", shape });
     this.pushHistory({ type: "add", id: shape.id });
+    this.clearCanvas();
+  }
+
+  commitEdit(
+    id: string | null,
+    type: "text" | "sticky",
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    content: string,
+    color?: string
+  ) {
+    if (id) {
+      const idx = this.existingShapes.findIndex((s) => s.id === id);
+      if (idx === -1) return;
+      const before = JSON.parse(JSON.stringify(this.existingShapes[idx])) as Shape;
+
+      if (!content.trim()) {
+        this.existingShapes = this.existingShapes.filter((s) => s.id !== id);
+        this.selectedId = null;
+        this.broadcast({ op: "delete", id });
+        this.pushHistory({ type: "delete", shape: before });
+      } else {
+        const updated = { ...this.existingShapes[idx], content } as Shape;
+        this.existingShapes[idx] = updated;
+        this.broadcast({ op: "update", shape: updated });
+        this.pushHistory({
+          type: "update",
+          id,
+          before,
+          after: JSON.parse(JSON.stringify(updated)),
+        });
+      }
+    } else {
+      if (!content.trim()) {
+        this.clearCanvas();
+        return;
+      }
+      const shape: Shape =
+        type === "text"
+          ? { id: genId(), type: "text", x, y, content }
+          : {
+              id: genId(),
+              type: "sticky",
+              x,
+              y,
+              width,
+              height,
+              content,
+              color: color || STICKY_PALETTE[0]!,
+            };
+      this.sendNewShape(shape);
+      return;
+    }
+    this.clearCanvas();
   }
 
   private deleteSelected() {
@@ -468,6 +667,24 @@ export class Game {
     }
   };
 
+  dblClickHandler = (e: MouseEvent) => {
+    if (this.selectedTool !== "select") return;
+    const { x, y } = this.toWorld(e.clientX, e.clientY);
+    const hit = this.hitTest(x, y);
+    if (hit && (hit.type === "text" || hit.type === "sticky")) {
+      this.onEditRequest?.({
+        id: hit.id,
+        type: hit.type,
+        x: hit.x,
+        y: hit.y,
+        width: hit.type === "sticky" ? hit.width : 220,
+        height: hit.type === "sticky" ? hit.height : 30,
+        content: hit.content,
+        color: hit.type === "sticky" ? hit.color : undefined,
+      });
+    }
+  };
+
   mouseDownHandler = (e: MouseEvent) => {
     if (this.spacePressed || e.button === 1) {
       this.dragMode = "pan";
@@ -506,6 +723,26 @@ export class Game {
       return;
     }
 
+    if (this.selectedTool === "text") {
+      this.onEditRequest?.({ id: null, type: "text", x, y, width: 220, height: 30, content: "" });
+      return;
+    }
+
+    if (this.selectedTool === "sticky") {
+      const color = STICKY_PALETTE[Math.floor(Math.random() * STICKY_PALETTE.length)]!;
+      this.onEditRequest?.({
+        id: null,
+        type: "sticky",
+        x,
+        y,
+        width: 200,
+        height: 150,
+        content: "",
+        color,
+      });
+      return;
+    }
+
     this.clicked = true;
     this.startX = x;
     this.startY = y;
@@ -534,13 +771,21 @@ export class Game {
 
       if (this.dragMode === "move") {
         const snap = this.shapeSnapshot;
-        if (snap.type === "rect") {
+        if (snap.type === "rect" || snap.type === "sticky" || snap.type === "text") {
           this.existingShapes[idx] = { ...snap, x: snap.x + dx, y: snap.y + dy };
         } else if (snap.type === "circle") {
           this.existingShapes[idx] = {
             ...snap,
             centerX: snap.centerX + dx,
             centerY: snap.centerY + dy,
+          };
+        } else if (snap.type === "arrow") {
+          this.existingShapes[idx] = {
+            ...snap,
+            x1: snap.x1 + dx,
+            y1: snap.y1 + dy,
+            x2: snap.x2 + dx,
+            y2: snap.y2 + dy,
           };
         } else {
           this.existingShapes[idx] = {
@@ -550,29 +795,45 @@ export class Game {
         }
       } else if (this.dragMode === "resize" && this.activeHandle) {
         const snap = this.shapeSnapshot;
-        const box = getBBox(snap);
-        const anchor = {
-          tl: { x: box.x + box.width, y: box.y + box.height },
-          tr: { x: box.x, y: box.y + box.height },
-          bl: { x: box.x + box.width, y: box.y },
-          br: { x: box.x, y: box.y },
-        }[this.activeHandle];
 
-        const newX = Math.min(anchor.x, currentX);
-        const newY = Math.min(anchor.y, currentY);
-        const newWidth = currentX - anchor.x;
-        const newHeight = currentY - anchor.y;
+        if (snap.type === "arrow") {
+          if (this.activeHandle === "start") {
+            this.existingShapes[idx] = { ...snap, x1: currentX, y1: currentY };
+          } else if (this.activeHandle === "end") {
+            this.existingShapes[idx] = { ...snap, x2: currentX, y2: currentY };
+          }
+        } else if (snap.type === "rect" || snap.type === "sticky" || snap.type === "circle") {
+          const box = this.getBBox(snap);
+          const handleKey = this.activeHandle as HandleName;
+          const anchor = {
+            tl: { x: box.x + box.width, y: box.y + box.height },
+            tr: { x: box.x, y: box.y + box.height },
+            bl: { x: box.x + box.width, y: box.y },
+            br: { x: box.x, y: box.y },
+          }[handleKey];
 
-        if (snap.type === "rect") {
-          this.existingShapes[idx] = { ...snap, x: newX, y: newY, width: newWidth, height: newHeight };
-        } else if (snap.type === "circle") {
-          const radius = Math.max(Math.abs(newWidth), Math.abs(newHeight)) / 2;
-          this.existingShapes[idx] = {
-            ...snap,
-            centerX: anchor.x + (currentX - anchor.x) / 2,
-            centerY: anchor.y + (currentY - anchor.y) / 2,
-            radius,
-          };
+          const newX = Math.min(anchor.x, currentX);
+          const newY = Math.min(anchor.y, currentY);
+          const newWidth = currentX - anchor.x;
+          const newHeight = currentY - anchor.y;
+
+          if (snap.type === "circle") {
+            const radius = Math.max(Math.abs(newWidth), Math.abs(newHeight)) / 2;
+            this.existingShapes[idx] = {
+              ...snap,
+              centerX: anchor.x + (currentX - anchor.x) / 2,
+              centerY: anchor.y + (currentY - anchor.y) / 2,
+              radius,
+            };
+          } else {
+            this.existingShapes[idx] = {
+              ...snap,
+              x: newX,
+              y: newY,
+              width: newWidth,
+              height: newHeight,
+            };
+          }
         }
       }
 
@@ -589,11 +850,19 @@ export class Game {
       return;
     }
 
-    const width = currentX - this.startX;
-    const height = currentY - this.startY;
-
     this.clearCanvas();
     this.ctx.strokeStyle = "rgba(255, 255, 255)";
+
+    if (this.selectedTool === "arrow") {
+      this.ctx.beginPath();
+      this.ctx.moveTo(this.startX, this.startY);
+      this.ctx.lineTo(currentX, currentY);
+      this.ctx.stroke();
+      return;
+    }
+
+    const width = currentX - this.startX;
+    const height = currentY - this.startY;
 
     if (this.selectedTool === "rect") {
       this.ctx.strokeRect(this.startX, this.startY, width, height);
@@ -654,6 +923,11 @@ export class Game {
         centerX: this.startX + (width < 0 ? -radius : radius),
         centerY: this.startY + (height < 0 ? -radius : radius),
       };
+    } else if (this.selectedTool === "arrow") {
+      const dist = Math.hypot(width, height);
+      if (dist > 4) {
+        shape = { id: genId(), type: "arrow", x1: this.startX, y1: this.startY, x2: currentX, y2: currentY };
+      }
     } else if (this.selectedTool === "pencil") {
       this.currentPencilPoints.push({ x: currentX, y: currentY });
       if (this.currentPencilPoints.length >= 2) {
@@ -662,14 +936,17 @@ export class Game {
       this.currentPencilPoints = [];
     }
 
-    if (!shape) return;
+    if (!shape) {
+      this.clearCanvas();
+      return;
+    }
     this.sendNewShape(shape);
-    this.clearCanvas();
   };
 
   initMouseHandlers() {
     this.canvas.addEventListener("mousedown", this.mouseDownHandler);
     this.canvas.addEventListener("mouseup", this.mouseUpHandler);
     this.canvas.addEventListener("mousemove", this.mouseMoveHandler);
+    this.canvas.addEventListener("dblclick", this.dblClickHandler);
   }
 }
