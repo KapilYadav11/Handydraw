@@ -30,7 +30,7 @@ export function Canvas({
   roomId: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gameRef = useRef<Game>();
+  const gameRef = useRef<Game | undefined>(undefined);
   const [game, setGame] = useState<Game>();
   const [selectedTool, setSelectedTool] = useState<Tool>("select");
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
