@@ -75,8 +75,10 @@ function LiveCanvas() {
   }, []);
 
   function pos(e: React.MouseEvent | React.TouchEvent) {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const point = "touches" in e ? e.touches[0] : e;
+    if (!canvasRef.current) return { x: 0, y: 0 };
+    const rect = canvasRef.current.getBoundingClientRect();
+    const point = "touches" in e ? (e.touches[0] ?? e.changedTouches?.[0]) : e;
+    if (!point) return last.current;
     return { x: point.clientX - rect.left, y: point.clientY - rect.top };
   }
 
@@ -90,7 +92,7 @@ function LiveCanvas() {
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
     const p = pos(e);
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = color as string;
     ctx.lineWidth = 3;
     ctx.lineCap = "round";
     ctx.beginPath();
