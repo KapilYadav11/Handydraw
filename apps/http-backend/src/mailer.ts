@@ -1,14 +1,6 @@
-import nodemailer from "nodemailer";
+import sgMail from "@sendgrid/mail";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT || 587),
-  secure: Number(process.env.EMAIL_PORT) === 465,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-});
+sgMail.setApiKey(process.env.SENDGRID_API_KEY || "");
 
 function wrapTemplate(title: string, bodyHtml: string): string {
   return `
@@ -40,9 +32,9 @@ export async function sendSignupOtpEmail(to: string, otp: string) {
     </p>${otpBlock(otp)}`
   );
 
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM,
+  await sgMail.send({
     to,
+    from: process.env.EMAIL_FROM || "",
     subject: "Verify your email address",
     html,
   });
@@ -59,9 +51,9 @@ export async function sendResetOtpEmail(to: string, otp: string) {
     </p>`
   );
 
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM,
+  await sgMail.send({
     to,
+    from: process.env.EMAIL_FROM || "",
     subject: "Password Reset Verification Code",
     html,
   });
