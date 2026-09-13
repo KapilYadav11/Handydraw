@@ -9,7 +9,7 @@ function wrapTemplate(title: string, bodyHtml: string): string {
     <h2 style="font-size: 18px; color: #14171B; margin: 0 0 12px;">${title}</h2>
     ${bodyHtml}
     <p style="font-size: 12px; color: #14171B99; margin-top: 32px;">
-      This is an automated message from Handydraw. Please do not reply to this email.
+      This is an automated message from Handydraw regarding your account. Please do not reply to this email.
     </p>
   </div>`;
 }
@@ -35,7 +35,8 @@ export async function sendSignupOtpEmail(to: string, otp: string) {
   await sgMail.send({
     to,
     from: process.env.EMAIL_FROM || "",
-    subject: "Verify your email address",
+    subject: "Your Handydraw verification code",
+    text: `Your Handydraw verification code is ${otp}. This code expires in 5 minutes. If you did not request this, you can ignore this email.`,
     html,
   });
 }
@@ -54,7 +55,8 @@ export async function sendResetOtpEmail(to: string, otp: string) {
   await sgMail.send({
     to,
     from: process.env.EMAIL_FROM || "",
-    subject: "Password Reset Verification Code",
+    subject: "Your Handydraw password reset code",
+    text: `Your Handydraw password reset code is ${otp}. This code expires in 5 minutes. If you did not request this, you can ignore this email.`,
     html,
   });
 }
