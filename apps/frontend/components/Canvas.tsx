@@ -12,22 +12,24 @@ import {
   MoveUpRight,
   Type,
   StickyNote,
+  Share2,
+  X,
+  Copy,
+  Check,
 } from "lucide-react";
-import { Game, EditRequest } from "@/draw/Game";
+import { Game } from "@/draw/Game";
+import { QRCodeBox } from "./QRCodeBox";
 
 export type Tool = "circle" | "rect" | "pencil" | "select" | "arrow" | "text" | "sticky";
-
-type EditingState = EditRequest & {
-  screenX: number;
-  screenY: number;
-};
 
 export function Canvas({
   roomId,
   socket,
+  roomName,
 }: {
   socket: WebSocket;
   roomId: string;
+  roomName?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game | undefined>(undefined);
@@ -35,7 +37,7 @@ export function Canvas({
   const [selectedTool, setSelectedTool] = useState<Tool>("select");
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(100);
-  const [editing, setEditing] = useState<EditingState | null>(null);
+  const [sharePanelOpen, setSharePanelOpen] = useState(false);
 
   useEffect(() => {
     setDimensions({ width: window.innerWidth, height: window.innerHeight });
@@ -53,15 +55,7 @@ export function Canvas({
     if (canvasRef.current) {
       const g = new Game(canvasRef.current, roomId, socket);
       gameRef.current = g;
-
       g.onViewportChange = (scale) => setZoom(scale);
-      g.onEditRequest = (req) => {
-        const t = g.getTransform();
-        const screenX = req.x * t.scale + t.offsetX;
-        const screenY = req.y * t.scale + t.offsetY - (req.type === "text" ? 22 : 0);
-        setEditing({ ...req, screenX, screenY });
-      };
-
       setGame(g);
 
       return () => {
@@ -69,27 +63,6 @@ export function Canvas({
       };
     }
   }, [canvasRef, roomId, socket]);
-
-  function commitEditing() {
-    if (!editing || !gameRef.current) return;
-    gameRef.current.commitEdit(
-      editing.id,
-      editing.type,
-      editing.x,
-      editing.y,
-      editing.width,
-      editing.height,
-      editing.content,
-      editing.color
-    );
-    setEditing(null);
-    setSelectedTool("select");
-  }
-
-  function cancelEditing() {
-    setEditing(null);
-    setSelectedTool("select");
-  }
 
   return (
     <div style={{ height: "100vh", overflow: "hidden", position: "relative" }}>
@@ -100,48 +73,23 @@ export function Canvas({
         style={{ cursor: selectedTool === "select" ? "default" : "crosshair" }}
       ></canvas>
 
-      {editing && (
-        <div style={{ position: "fixed", left: editing.screenX, top: editing.screenY, zIndex: 50 }}>
-          {editing.type === "text" ? (
-            <input
-              autoFocus
-              value={editing.content}
-              onChange={(e) => setEditing({ ...editing, content: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitEditing();
-                if (e.key === "Escape") cancelEditing();
-              }}
-              onBlur={commitEditing}
-              placeholder="Type something..."
-              className="min-w-[180px] border-b border-white/50 bg-transparent text-lg text-white outline-none placeholder:text-white/30"
-            />
-          ) : (
-            <textarea
-              autoFocus
-              value={editing.content}
-              onChange={(e) => setEditing({ ...editing, content: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") cancelEditing();
-              }}
-              onBlur={commitEditing}
-              placeholder="Note..."
-              style={{
-                width: editing.width,
-                height: editing.height,
-                backgroundColor: editing.color,
-              }}
-              className="resize-none rounded-lg p-2.5 text-sm text-[#1E2530] shadow-lg outline-none placeholder:text-[#1E2530]/40"
-            />
-          )}
-        </div>
-      )}
-
-      <Topbar selectedTool={selectedTool} setSelectedTool={setSelectedTool} />
+      <Topbar
+        selectedTool={selectedTool}
+        setSelectedTool={setSelectedTool}
+        onShareClick={() => setSharePanelOpen(true)}
+      />
       <ZoomControls
         zoom={zoom}
         onZoomIn={() => game?.zoomBy(1.2)}
         onZoomOut={() => game?.zoomBy(1 / 1.2)}
         onReset={() => game?.resetView()}
+      />
+
+      <SharePanel
+        open={sharePanelOpen}
+        onClose={() => setSharePanelOpen(false)}
+        roomId={roomId}
+        roomName={roomName}
       />
     </div>
   );
@@ -150,13 +98,21 @@ export function Canvas({
 function Topbar({
   selectedTool,
   setSelectedTool,
+  onShareClick,
 }: {
   selectedTool: Tool;
   setSelectedTool: (s: Tool) => void;
+  onShareClick: () => void;
 }) {
   return (
     <div style={{ position: "fixed", top: 10, left: 10 }}>
       <div className="flex gap-1 bg-black/60 p-1 rounded-lg">
+        <IconButton
+          onClick={onShareClick}
+          activated={false}
+          icon={<Share2 />}
+        />
+        <div className="my-1 w-px bg-white/10" />
         <IconButton
           onClick={() => setSelectedTool("select")}
           activated={selectedTool === "select"}
@@ -194,6 +150,100 @@ function Topbar({
         />
       </div>
     </div>
+  );
+}
+
+function SharePanel({
+  open,
+  onClose,
+  roomId,
+  roomName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  roomId: string;
+  roomName?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [link, setLink] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setLink(`${window.location.origin}/canvas/${roomId}`);
+    }
+  }, [roomId]);
+
+  function copyLink() {
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        className="fixed inset-0 z-40 bg-black/40"
+        style={{ backdropFilter: "blur(2px)" }}
+      />
+      <div
+        className="fixed left-0 top-0 z-50 flex h-full w-[320px] flex-col bg-[#14171B] p-6 shadow-2xl"
+        style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
+      >
+        <div className="mb-6 flex items-center justify-between">
+          <h3
+            className="text-lg text-[#F3EFE6]"
+            style={{ fontFamily: "'Fraunces', serif" }}
+          >
+            Share this room
+          </h3>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-[#F3EFE6]/50 hover:bg-white/5 hover:text-[#F3EFE6]"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {roomName && (
+          <p className="mb-4 text-sm text-[#F3EFE6]/50">
+            Team: <span className="text-[#F3EFE6]">{roomName}</span>
+          </p>
+        )}
+
+        <div className="mb-5 flex flex-col items-center gap-3 rounded-2xl bg-white/[0.03] p-5">
+          <QRCodeBox value={link} size={150} />
+          <p className="text-center text-xs text-[#F3EFE6]/40">
+            Scan to open this room
+          </p>
+        </div>
+
+        <label className="mb-2 text-xs text-[#F3EFE6]/50">Shareable link</label>
+        <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] p-2">
+          <input
+            readOnly
+            value={link}
+            className="min-w-0 flex-1 truncate bg-transparent text-xs text-[#F3EFE6]/80 outline-none"
+          />
+          <button
+            onClick={copyLink}
+            className="flex shrink-0 items-center gap-1 rounded-lg bg-[#F3EFE6] px-3 py-1.5 text-xs font-medium text-[#14171B]"
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+
+        <p className="mt-4 text-xs leading-relaxed text-[#F3EFE6]/30">
+          For security, the password isn't included in this link. Share the
+          room password separately (e.g. over chat) with whoever you send
+          this to.
+        </p>
+      </div>
+    </>
   );
 }
 
