@@ -5,7 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Canvas } from "./Canvas";
 
-export function RoomCanvas({ roomId }: { roomId: string }) {
+export function RoomCanvas({
+  roomId,
+  roomName,
+}: {
+  roomId: string;
+  roomName?: string;
+}) {
   const router = useRouter();
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [status, setStatus] = useState<"connecting" | "no-token" | "error">(
@@ -90,7 +96,7 @@ export function RoomCanvas({ roomId }: { roomId: string }) {
 
   return (
     <div>
-      <Canvas roomId={roomId} socket={socket} />
+      <Canvas roomId={roomId} socket={socket} roomName={roomName} />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { JWT_SECRET } from "@repo/backend-common/config";
 import { middleware } from "./middleware";
 import {
   CreateRoomSchema,
+  JoinRoomSchema,
   CreateUserSchema,
   SigninSchema,
   VerifySignupOtpSchema,
@@ -495,15 +496,76 @@ app.post("/room", middleware, async (req, res) => {
 
   const userId = req.userId;
   try {
+    const passwordHash = await bcrypt.hash(parsedData.data.password, 10);
     const room = await prismaClient.room.create({
       data: {
         slug: parsedData.data.name,
+        passwordHash,
         adminId: userId,
       },
     });
-    res.json({ roomId: room.id });
+    res.json({ roomId: room.id, roomName: room.slug });
   } catch (e) {
+    console.error("Create room error:", e);
     res.status(500).json({ message: "Could not create room. Please try again." });
+  }
+});
+
+app.post("/room/join", middleware, async (req, res) => {
+  const parsedData = JoinRoomSchema.safeParse(req.body);
+  if (!parsedData.success) {
+    res.status(400).json({
+      message: parsedData.error.issues[0]?.message || "Incorrect inputs",
+    });
+    return;
+  }
+
+  try {
+    const candidates = await prismaClient.room.findMany({
+      where: { slug: parsedData.data.name },
+      orderBy: { createdAt: "desc" },
+    });
+
+    for (const room of candidates) {
+      const isValid = await bcrypt.compare(parsedData.data.password, room.passwordHash);
+      if (isValid) {
+        res.json({ roomId: room.id, roomName: room.slug });
+        return;
+      }
+    }
+
+    res.status(403).json({
+      message: "Incorrect team name or password.",
+    });
+  } catch (e) {
+    console.error("Join room error:", e);
+    res.status(500).json({ message: "Something went wrong. Please try again." });
+  }
+});
+
+app.post("/room/verify-access", middleware, async (req, res) => {
+  const { roomId, password } = req.body;
+
+  try {
+    const room = await prismaClient.room.findFirst({
+      where: { id: Number(roomId) },
+    });
+
+    if (!room) {
+      res.status(404).json({ message: "Room not found." });
+      return;
+    }
+
+    const isValid = await bcrypt.compare(password || "", room.passwordHash);
+    if (!isValid) {
+      res.status(403).json({ message: "Incorrect password." });
+      return;
+    }
+
+    res.json({ roomName: room.slug });
+  } catch (e) {
+    console.error("Verify access error:", e);
+    res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 });
 

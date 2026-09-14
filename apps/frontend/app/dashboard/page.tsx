@@ -4,7 +4,17 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, LogOut, Clock, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  LogOut,
+  Clock,
+  Sparkles,
+  Lock,
+  Eye,
+  EyeOff,
+  Users,
+  KeyRound,
+} from "lucide-react";
 import { HTTP_BACKEND } from "@/config";
 import { Logo } from "@/components/Logo";
 import { getRecentRooms, addRecentRoom } from "@/lib/recentRooms";
@@ -17,9 +27,15 @@ function colorForRoom(name: string) {
   return DOT_COLORS[Math.abs(hash) % DOT_COLORS.length];
 }
 
+type Mode = "create" | "join";
+
 export default function Dashboard() {
   const router = useRouter();
-  const [roomName, setRoomName] = useState("");
+  const [mode, setMode] = useState<Mode>("join");
+  const [teamName, setTeamName] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [recentRooms, setRecentRooms] = useState<string[]>([]);
@@ -35,33 +51,55 @@ export default function Dashboard() {
     setMounted(true);
   }, [router]);
 
-  async function goToRoom(name: string) {
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError("");
+    setPassword("");
+    setConfirmPassword("");
+  }
+
+  function useRecentRoom(name: string) {
+    setMode("join");
+    setTeamName(name);
+    setError("");
+    setPassword("");
+  }
+
+  async function handleSubmit() {
     setError("");
     const token = localStorage.getItem("token");
-    if (!name.trim()) {
-      setError("Enter a room name");
+
+    if (!teamName.trim()) {
+      setError("Enter a team name");
+      return;
+    }
+    if (!password) {
+      setError("Enter a password");
+      return;
+    }
+    if (mode === "create" && password !== confirmPassword) {
+      setError("Passwords don't match");
       return;
     }
 
     setLoading(true);
     try {
-      const existing = await axios.get(`${HTTP_BACKEND}/room/${name}`);
-      if (existing.data.room) {
-        addRecentRoom(name);
-        router.push(`/canvas/${existing.data.room.id}`);
-        return;
-      }
-
+      const endpoint = mode === "create" ? "/room" : "/room/join";
       const res = await axios.post(
-        `${HTTP_BACKEND}/room`,
-        { name },
+        `${HTTP_BACKEND}${endpoint}`,
+        { name: teamName.trim(), password },
         { headers: { Authorization: token || "" } }
       );
-      addRecentRoom(name);
+      sessionStorage.setItem(`room-access-${res.data.roomId}`, "true");
+      sessionStorage.setItem(`room-name-${res.data.roomId}`, res.data.roomName || teamName.trim());
+      addRecentRoom(res.data.roomName || teamName.trim());
       router.push(`/canvas/${res.data.roomId}`);
     } catch (e: any) {
       setError(
-        e?.response?.data?.message || "Could not create or join that room."
+        e?.response?.data?.message ||
+        (mode === "create"
+          ? "Could not create team. Please try again."
+          : "Could not join team. Please try again.")
       );
     } finally {
       setLoading(false);
@@ -77,7 +115,6 @@ export default function Dashboard() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[#14171B] px-6 py-16">
-      {/* ambient glows */}
       <div className="pointer-events-none absolute -left-40 top-0 h-[32rem] w-[32rem] rounded-full bg-[#3B5BFF]/20 blur-[120px]" />
       <div className="pointer-events-none absolute -right-32 bottom-0 h-[28rem] w-[28rem] rounded-full bg-[#FFB020]/15 blur-[120px]" />
       <div
@@ -126,47 +163,104 @@ export default function Dashboard() {
         initial={{ opacity: 0, y: 20 }}
         animate={mounted ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.6, delay: 0.15 }}
-        className="mb-2 text-center text-4xl text-[#F3EFE6] sm:text-5xl"
+        className="mb-8 text-center text-4xl text-[#F3EFE6] sm:text-5xl"
         style={{ fontFamily: "'Fraunces', serif" }}
       >
         Where to today?
       </motion.h1>
-      <motion.p
-        initial={{ opacity: 0, y: 20 }}
-        animate={mounted ? { opacity: 1, y: 0 } : {}}
-        transition={{ duration: 0.6, delay: 0.2 }}
-        className="mb-10 text-center text-[#F3EFE6]/50"
-        style={font}
-      >
-        Enter a room name to create it, or join one that already exists.
-      </motion.p>
 
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={mounted ? { opacity: 1, y: 0, scale: 1 } : {}}
-        transition={{ duration: 0.6, delay: 0.25 }}
+        transition={{ duration: 0.6, delay: 0.2 }}
         className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-xl"
       >
-        <div className="flex items-center gap-2 rounded-2xl bg-[#0F1114] px-4 py-3">
-          <input
-            autoFocus
-            value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && goToRoom(roomName)}
-            placeholder="e.g. team-standup"
-            className="flex-1 bg-transparent text-[#F3EFE6] outline-none placeholder:text-[#F3EFE6]/25"
-            style={font}
-          />
-          <motion.button
-            whileTap={{ scale: 0.94 }}
-            disabled={loading}
-            onClick={() => goToRoom(roomName)}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-[#F3EFE6] px-4 py-2 text-sm font-medium text-[#14171B] transition-opacity disabled:opacity-50"
+        <div className="mb-3 flex gap-1 rounded-2xl bg-black/30 p-1" style={font}>
+          <button
+            onClick={() => switchMode("join")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm transition-colors ${mode === "join"
+                ? "bg-white/10 text-[#F3EFE6]"
+                : "text-[#F3EFE6]/40 hover:text-[#F3EFE6]/70"
+              }`}
           >
-            {loading ? "..." : "Enter"}
-            {!loading && <ArrowRight size={14} />}
-          </motion.button>
+            <Users size={14} /> Join a team
+          </button>
+          <button
+            onClick={() => switchMode("create")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm transition-colors ${mode === "create"
+                ? "bg-white/10 text-[#F3EFE6]"
+                : "text-[#F3EFE6]/40 hover:text-[#F3EFE6]/70"
+              }`}
+          >
+            <KeyRound size={14} /> Create a team
+          </button>
         </div>
+
+        <div className="flex flex-col gap-3 rounded-2xl bg-[#0F1114] p-4" style={font}>
+          <input
+            value={teamName}
+            onChange={(e) => setTeamName(e.target.value)}
+            placeholder="Team name"
+            className="w-full bg-transparent text-[#F3EFE6] outline-none placeholder:text-[#F3EFE6]/25"
+          />
+          <div className="h-px bg-white/10" />
+          <div className="relative flex items-center">
+            <Lock size={14} className="mr-2 shrink-0 text-[#F3EFE6]/30" />
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !confirmPassword && mode === "join" && handleSubmit()}
+              placeholder="Password"
+              className="w-full bg-transparent text-[#F3EFE6] outline-none placeholder:text-[#F3EFE6]/25"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="text-[#F3EFE6]/30 hover:text-[#F3EFE6]/60"
+            >
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {mode === "create" && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <div className="h-px bg-white/10 mb-3" />
+                <div className="flex items-center">
+                  <Lock size={14} className="mr-2 shrink-0 text-[#F3EFE6]/30" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                    placeholder="Confirm password"
+                    className="w-full bg-transparent text-[#F3EFE6] outline-none placeholder:text-[#F3EFE6]/25"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <motion.button
+          whileTap={{ scale: 0.98 }}
+          disabled={loading}
+          onClick={handleSubmit}
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#F3EFE6] py-3 text-sm font-medium text-[#14171B] transition-opacity disabled:opacity-50"
+          style={font}
+        >
+          {loading
+            ? "..."
+            : mode === "create"
+              ? "Create team"
+              : "Join team"}
+          {!loading && <ArrowRight size={14} />}
+        </motion.button>
 
         <AnimatePresence>
           {error && (
@@ -175,6 +269,7 @@ export default function Dashboard() {
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               className="px-2 pt-3 text-sm text-[#FF7A7A]"
+              style={font}
             >
               {error}
             </motion.p>
@@ -193,7 +288,7 @@ export default function Dashboard() {
             className="mb-3 flex items-center gap-1.5 text-xs text-[#F3EFE6]/40"
             style={font}
           >
-            <Clock size={12} /> Recent rooms
+            <Clock size={12} /> Recent teams
           </div>
           <div className="flex flex-wrap gap-2">
             {recentRooms.map((room, i) => (
@@ -204,7 +299,7 @@ export default function Dashboard() {
                 transition={{ duration: 0.4, delay: 0.4 + i * 0.06 }}
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => goToRoom(room)}
+                onClick={() => useRecentRoom(room)}
                 className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm text-[#F3EFE6]/80 transition-colors hover:border-white/25"
                 style={font}
               >
@@ -216,6 +311,9 @@ export default function Dashboard() {
               </motion.button>
             ))}
           </div>
+          <p className="mt-2 text-xs text-[#F3EFE6]/30" style={font}>
+            Clicking a team fills the name — you'll still need its password.
+          </p>
         </motion.div>
       )}
     </div>

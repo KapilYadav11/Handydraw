@@ -1,4 +1,4 @@
-import { RoomCanvas } from "@/components/RoomCanvas";
+import { RoomGate } from "@/components/RoomGate";
 
 export default async function CanvasPage({
   params,
@@ -7,5 +7,5 @@ export default async function CanvasPage({
 }) {
   const { roomId } = await params;
 
-  return <RoomCanvas roomId={roomId} />;
+  return <RoomGate roomId={roomId} />;
 }

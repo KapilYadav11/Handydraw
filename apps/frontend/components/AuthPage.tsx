@@ -231,11 +231,10 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       onBlur={() => markTouched("name")}
-                      className={`peer w-full border-b-2 bg-transparent py-2 text-[#1E2530] outline-none transition-colors ${
-                        touched.name && !nameValid
+                      className={`peer w-full border-b-2 bg-transparent py-2 text-[#1E2530] outline-none transition-colors ${touched.name && !nameValid
                           ? "border-[#C0392B]"
                           : "border-[#D8D2C4] focus:border-[#3B5BFF]"
-                      }`}
+                        }`}
                     />
                     <label
                       htmlFor="name"
@@ -259,11 +258,10 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onBlur={() => markTouched("email")}
-                    className={`peer w-full border-b-2 bg-transparent py-2 text-[#1E2530] outline-none transition-colors ${
-                      touched.email && !emailValid
+                    className={`peer w-full border-b-2 bg-transparent py-2 text-[#1E2530] outline-none transition-colors ${touched.email && !emailValid
                         ? "border-[#C0392B]"
                         : "border-[#D8D2C4] focus:border-[#3B5BFF]"
-                    }`}
+                      }`}
                   />
                   <label
                     htmlFor="email"
@@ -286,11 +284,10 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onBlur={() => markTouched("password")}
-                    className={`peer w-full border-b-2 bg-transparent py-2 pr-8 text-[#1E2530] outline-none transition-colors ${
-                      touched.password && !isSignin && !passwordValid
+                    className={`peer w-full border-b-2 bg-transparent py-2 pr-8 text-[#1E2530] outline-none transition-colors ${touched.password && !isSignin && !passwordValid
                         ? "border-[#C0392B]"
                         : "border-[#D8D2C4] focus:border-[#3B5BFF]"
-                    }`}
+                      }`}
                   />
                   <label
                     htmlFor="password"
@@ -321,33 +318,29 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                   {!isSignin && (password.length > 0 || touched.password) && (
                     <ul className="mt-2 flex flex-col gap-1 text-xs">
                       <li
-                        className={`flex items-center gap-1.5 ${
-                          passwordChecks.capital ? "text-[#2E7D32]" : "text-[#1E2530]/40"
-                        }`}
+                        className={`flex items-center gap-1.5 ${passwordChecks.capital ? "text-[#2E7D32]" : "text-[#1E2530]/40"
+                          }`}
                       >
                         {passwordChecks.capital ? <Check size={13} /> : <X size={13} />}
                         Starts with a capital letter
                       </li>
                       <li
-                        className={`flex items-center gap-1.5 ${
-                          passwordChecks.number ? "text-[#2E7D32]" : "text-[#1E2530]/40"
-                        }`}
+                        className={`flex items-center gap-1.5 ${passwordChecks.number ? "text-[#2E7D32]" : "text-[#1E2530]/40"
+                          }`}
                       >
                         {passwordChecks.number ? <Check size={13} /> : <X size={13} />}
                         Contains a number
                       </li>
                       <li
-                        className={`flex items-center gap-1.5 ${
-                          passwordChecks.symbol ? "text-[#2E7D32]" : "text-[#1E2530]/40"
-                        }`}
+                        className={`flex items-center gap-1.5 ${passwordChecks.symbol ? "text-[#2E7D32]" : "text-[#1E2530]/40"
+                          }`}
                       >
                         {passwordChecks.symbol ? <Check size={13} /> : <X size={13} />}
                         Contains a symbol (e.g. ! @ # $)
                       </li>
                       <li
-                        className={`flex items-center gap-1.5 ${
-                          passwordChecks.length ? "text-[#2E7D32]" : "text-[#1E2530]/40"
-                        }`}
+                        className={`flex items-center gap-1.5 ${passwordChecks.length ? "text-[#2E7D32]" : "text-[#1E2530]/40"
+                          }`}
                       >
                         {passwordChecks.length ? <Check size={13} /> : <X size={13} />}
                         More than 8 characters
@@ -365,11 +358,10 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       onBlur={() => markTouched("confirmPassword")}
-                      className={`peer w-full border-b-2 bg-transparent py-2 text-[#1E2530] outline-none transition-colors ${
-                        touched.confirmPassword && !confirmValid
+                      className={`peer w-full border-b-2 bg-transparent py-2 text-[#1E2530] outline-none transition-colors ${touched.confirmPassword && !confirmValid
                           ? "border-[#C0392B]"
                           : "border-[#D8D2C4] focus:border-[#3B5BFF]"
-                      }`}
+                        }`}
                     />
                     <label
                       htmlFor="confirmPassword"
@@ -400,8 +392,8 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
                         ? "Signing in..."
                         : "Sending OTP..."
                       : isSignin
-                      ? "Sign in"
-                      : "Create account"}
+                        ? "Sign in"
+                        : "Create account"}
                   </span>
                   <svg
                     className="pointer-events-none absolute inset-x-6 bottom-2 h-2 w-[calc(100%-3rem)]"
@@ -456,6 +448,9 @@ export function AuthPage({ isSignin }: { isSignin: boolean }) {
               </h2>
               <p className="mb-8 text-sm text-[#1E2530]/60" style={fieldFont}>
                 Enter the 6-digit OTP sent to <strong>{email}</strong>
+              </p>
+              <p className="mb-8 text-xs text-[#1E2530]/40" style={fieldFont}>
+                Don't see it? Check your spam or junk folder.
               </p>
 
               <div className="flex flex-col gap-5" style={fieldFont}>

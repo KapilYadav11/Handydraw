@@ -22,6 +22,21 @@ const otpField = z
   .length(6, "OTP must be 6 digits")
   .regex(/^[0-9]{6}$/, "OTP must be 6 digits");
 
+const roomNameField = z
+  .string()
+  .trim()
+  .min(3, "Team name must be at least 3 characters")
+  .max(30, "Team name must be under 30 characters")
+  .regex(
+    /^[a-zA-Z0-9-_ ]+$/,
+    "Team name can only contain letters, numbers, spaces, - and _"
+  );
+
+const roomPasswordField = z
+  .string()
+  .min(4, "Room password must be at least 4 characters")
+  .max(50, "Room password is too long");
+
 export const CreateUserSchema = z.object({
   username: emailField,
   password: strongPasswordField,
@@ -38,15 +53,13 @@ export const SigninSchema = z.object({
 });
 
 export const CreateRoomSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(3, "Room name must be at least 3 characters")
-    .max(20, "Room name must be under 20 characters")
-    .regex(
-      /^[a-zA-Z0-9-_]+$/,
-      "Room name can only contain letters, numbers, - and _"
-    ),
+  name: roomNameField,
+  password: roomPasswordField,
+});
+
+export const JoinRoomSchema = z.object({
+  name: roomNameField,
+  password: z.string().min(1, "Password is required"),
 });
 
 export const VerifySignupOtpSchema = z.object({
